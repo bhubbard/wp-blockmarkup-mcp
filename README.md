@@ -96,7 +96,7 @@ To use this with Claude Desktop, add the server configuration to your `claude_de
 {
   "mcpServers": {
     "wp-blockmarkup": {
-      "command": "/Users/bhubbard/PROJECTS/wp-block-mcp/target/release/wp-blockmarkup-mcp",
+      "command": "/wp-block-mcp/target/release/wp-blockmarkup-mcp",
       "args": []
     }
   }
