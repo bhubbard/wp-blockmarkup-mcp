@@ -1,0 +1,5 @@
+/target
+/temp-original
+cargo_check.log
+*.db
+*.log
