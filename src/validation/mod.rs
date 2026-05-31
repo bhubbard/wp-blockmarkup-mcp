@@ -160,6 +160,8 @@ fn validate_block(conn: Option<&Connection>, block: &ParsedBlock, errors: &mut V
     }
 }
 
+use serde_json::json;
+
 fn validate_attributes(
     schema: &ValidationSchema,
     attrs: &serde_json::Map<String, Value>,
@@ -222,60 +224,88 @@ fn validate_attributes(
         }
     }
 
-    // Type checking
+    // Construct JSON Schema dynamically
+    let mut properties = serde_json::Map::new();
+
+    // Map attributes schemas
     for schema_attr in &schema.attributes {
-        if let Some(val) = attrs.get(&schema_attr.name) {
-            if let Some(ref attr_type_str) = schema_attr.r#type {
-                if attr_type_str == "rich-text" || attr_type_str == "unknown" {
-                    continue;
-                }
+        let mut attr_schema = serde_json::Map::new();
 
-                let actual_type = get_value_type_str(val);
-                let allowed_types: Vec<&str> = attr_type_str.split('|').collect();
-
-                let mut is_allowed = allowed_types.contains(&actual_type);
-                if !is_allowed && actual_type == "number" && allowed_types.contains(&"integer") {
-                    if val.is_i64() || val.as_f64().map(|f| f.fract() == 0.0).unwrap_or(false) {
-                        is_allowed = true;
-                    }
-                }
-
-                if !is_allowed {
-                    errors.push(format!(
-                        "Attribute \"{}\" on {}: expected {}, got {}",
-                        schema_attr.name, schema.block_name, attr_type_str, actual_type
-                    ));
+        let mut types = Vec::new();
+        if let Some(ref t_str) = schema_attr.r#type {
+            for t in t_str.split('|') {
+                match t {
+                    "rich-text" => types.push("string"),
+                    "string" | "number" | "integer" | "boolean" | "object" | "array" | "null" => types.push(t),
+                    _ => {}
                 }
             }
+        }
 
-            // Check enum
-            if let Some(ref enum_str) = schema_attr.enum_values {
-                if let Ok(Value::Array(allowed_arr)) = serde_json::from_str::<Value>(enum_str) {
-                    if let Some(s) = val.as_str() {
-                        let allowed_strings: Vec<&str> = allowed_arr.iter().filter_map(|v| v.as_str()).collect();
-                        if !allowed_strings.contains(&s) {
-                            errors.push(format!(
-                                "Attribute \"{}\" on {}: value \"{}\" not in allowed values [{}]",
-                                schema_attr.name, schema.block_name, s, allowed_strings.join(", ")
-                            ));
-                        }
-                    }
-                }
+        if !types.is_empty() {
+            if types.len() == 1 {
+                attr_schema.insert("type".to_string(), Value::String(types[0].to_string()));
+            } else {
+                attr_schema.insert(
+                    "type".to_string(),
+                    Value::Array(types.into_iter().map(|t| Value::String(t.to_string())).collect()),
+                );
             }
+        }
+
+        if let Some(ref enum_str) = schema_attr.enum_values {
+            if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(enum_str) {
+                attr_schema.insert("enum".to_string(), Value::Array(arr));
+            }
+        }
+
+        properties.insert(schema_attr.name.clone(), Value::Object(attr_schema));
+    }
+
+    // Add global property specs
+    let global_props = vec![
+        ("className", json!({"type": "string"})),
+        ("anchor", json!({"type": "string"})),
+        ("style", json!({"type": "object"})),
+        ("backgroundColor", json!({"type": "string"})),
+        ("textColor", json!({"type": "string"})),
+        ("gradient", json!({"type": "string"})),
+        ("fontSize", json!({"type": "string"})),
+        ("fontFamily", json!({"type": "string"})),
+        ("align", json!({"type": "string"})),
+        ("lock", json!({"type": "object"})),
+        ("metadata", json!({"type": "object"})),
+        ("textAlign", json!({"type": "string"})),
+        ("layout", json!({"type": "object"})),
+        ("linkColor", json!({"type": "string"})),
+        ("blockGap", json!({"type": ["string", "object"]})),
+        ("borderColor", json!({"type": "string"})),
+        ("position", json!({"type": "object"})),
+    ];
+
+    for (k, v) in global_props {
+        if !properties.contains_key(k) {
+            properties.insert(k.to_string(), v);
+        }
+    }
+
+    let schema_json = json!({
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": true
+    });
+
+    if let Ok(validator) = jsonschema::validator_for(&schema_json) {
+        let instance = Value::Object(attrs.clone());
+        for err in validator.iter_errors(&instance) {
+            errors.push(format!(
+                "Attribute error on {}: {} at path \"{}\"",
+                schema.block_name, err, err.instance_path()
+            ));
         }
     }
 }
 
-fn get_value_type_str(val: &Value) -> &'static str {
-    match val {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
-}
 
 pub fn validate_markup(
     conn: Option<&Connection>,

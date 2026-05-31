@@ -20,10 +20,11 @@ pub fn wp_to_kebab_case(input: &str) -> String {
     result.to_lowercase()
 }
 
-struct PresetRef {
-    path: String,
-    group: String,
-    slug: String,
+#[derive(Debug)]
+pub struct PresetRef {
+    pub path: String,
+    pub group: String,
+    pub slug: String,
 }
 
 fn collect_preset_refs(value: &Value, path: &mut Vec<String>, refs: &mut Vec<PresetRef>) {
@@ -94,4 +95,22 @@ pub fn validate_preset_references(parsed_blocks: &[ParsedBlock]) -> Vec<String> 
         check_block(block, &mut warnings);
     }
     warnings
+}
+
+pub fn collect_all_preset_refs(blocks: &[ParsedBlock]) -> Vec<PresetRef> {
+    let mut refs = Vec::new();
+    for b in blocks {
+        collect_refs_recursive(b, &mut refs);
+    }
+    refs
+}
+
+fn collect_refs_recursive(block: &ParsedBlock, refs: &mut Vec<PresetRef>) {
+    let mut path = Vec::new();
+    if let Some(ref attrs) = block.attrs {
+        collect_preset_refs(attrs, &mut path, refs);
+    }
+    for inner in &block.inner_blocks {
+        collect_refs_recursive(inner, refs);
+    }
 }

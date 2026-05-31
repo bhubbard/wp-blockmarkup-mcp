@@ -5,8 +5,9 @@ use wp_block_mcp::db::{
     search_blocks, get_block_schema, get_stats, rebuild_fts_index, Source, SearchOpts,
 };
 use wp_block_mcp::indexer::{index_sources, IndexStats};
-use wp_block_mcp::validation::block_parser::parse;
+use wp_block_mcp::validation::block_parser::{parse, ParsedBlock};
 use wp_block_mcp::validation::validate_structural;
+use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(name = "wp-blocks")]
@@ -77,6 +78,20 @@ enum Commands {
     },
     #[command(name = "rebuild-index", about = "Rebuild FTS indexes (recovery for out-of-sync full-text search)")]
     RebuildIndex,
+    #[command(name = "lint", about = "Lint themes, templates, or patterns recursively for block markup errors")]
+    Lint {
+        #[arg(long, required = true)]
+        path: String,
+    },
+    #[command(name = "format", about = "Automatically format and fix invalid preset references in templates")]
+    Format {
+        #[arg(long, required = true)]
+        path: String,
+    },
+    #[command(name = "preview", about = "Interactively preview block markup in a local browser sandbox")]
+    Preview {
+        markup: String,
+    },
 }
 
 #[tokio::main]
@@ -95,6 +110,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             branch,
             no_index,
         } => {
+            if r#type == "wordpress-org" && repo.is_none() {
+                eprintln!("Error: wordpress-org source type requires the --repo parameter to specify the plugin slug.");
+                std::process::exit(1);
+            }
+
             let existing = get_source(&conn, &name)?;
             if existing.is_some() {
                 eprintln!("Source \"{}\" already exists. Remove it first.", name);
@@ -334,9 +354,203 @@ async fn main() -> Result<(), Box<dyn Error>> {
             rebuild_fts_index(&mut conn_mut)?;
             println!("FTS indexes rebuilt successfully.");
         }
+        Commands::Lint { path } => {
+            let mut total_errors = 0;
+            let mut total_warnings = 0;
+            let mut files_checked = 0;
+            let mut has_invalid_files = false;
+
+            for entry in WalkDir::new(&path).into_iter().filter_map(|e| e.ok()) {
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext == "html" || ext == "php" || ext == "json" {
+                        if let Ok(content) = std::fs::read_to_string(file_path) {
+                            if content.contains("<!-- wp:") {
+                                files_checked += 1;
+                                let result = validate_structural(Some(&conn), &content);
+                                
+                                if !result.valid || !result.warnings.is_empty() {
+                                    println!("\n[File] {}", file_path.to_string_lossy());
+                                    
+                                    let block_lines = get_block_lines(&content, &result.parsed_blocks);
+                                    
+                                    if !result.errors.is_empty() {
+                                        has_invalid_files = true;
+                                        total_errors += result.errors.len();
+                                        for err in &result.errors {
+                                            let mut line_num = 1;
+                                            for (block_name_opt, line) in &block_lines {
+                                                if let Some(name) = block_name_opt {
+                                                    if err.contains(name) {
+                                                        line_num = *line;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            println!("  Line {} [Error]: {}", line_num, err);
+                                        }
+                                    }
+                                    
+                                    if !result.warnings.is_empty() {
+                                        total_warnings += result.warnings.len();
+                                        for warn in &result.warnings {
+                                            let mut line_num = 1;
+                                            for (block_name_opt, line) in &block_lines {
+                                                if let Some(name) = block_name_opt {
+                                                    if warn.contains(name) {
+                                                        line_num = *line;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            println!("  Line {} [Warning]: {}", line_num, warn);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            println!("\nLinting complete: checked {} file(s) with block markup.", files_checked);
+            println!("  Total Errors:   {}", total_errors);
+            println!("  Total Warnings: {}", total_warnings);
+
+            if has_invalid_files {
+                std::process::exit(1);
+            }
+        }
+        Commands::Format { path } => {
+            let mut files_formatted = 0;
+            let mut total_fixes = 0;
+
+            for entry in WalkDir::new(&path).into_iter().filter_map(|e| e.ok()) {
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext == "html" || ext == "php" || ext == "json" {
+                        if let Ok(content) = std::fs::read_to_string(file_path) {
+                            if content.contains("<!-- wp:") {
+                                let parsed_blocks = parse(&content);
+                                let refs = wp_block_mcp::validation::preset::collect_all_preset_refs(&parsed_blocks);
+                                
+                                let mut new_content = content.clone();
+                                let mut file_fixes = 0;
+                                
+                                for ref_info in refs {
+                                    let kebab_slug = wp_block_mcp::validation::preset::wp_to_kebab_case(&ref_info.slug);
+                                    if kebab_slug == ref_info.slug {
+                                        continue;
+                                    }
+                                    
+                                    let wrong_var = format!("--wp--preset--{}--{}", ref_info.group, ref_info.slug);
+                                    let canonical_var = format!("--wp--preset--{}--{}", ref_info.group, kebab_slug);
+                                    
+                                    let wrong_json_preset = format!("var:preset|{}|{}", ref_info.group, ref_info.slug);
+                                    let canonical_json_preset = format!("var:preset|{}|{}", ref_info.group, kebab_slug);
+                                    
+                                    if new_content.contains(&wrong_var) {
+                                        new_content = new_content.replace(&wrong_var, &canonical_var);
+                                        file_fixes += 1;
+                                    }
+                                    if new_content.contains(&wrong_json_preset) {
+                                        new_content = new_content.replace(&wrong_json_preset, &canonical_json_preset);
+                                        file_fixes += 1;
+                                    }
+                                }
+                                
+                                if file_fixes > 0 {
+                                    std::fs::write(file_path, new_content)?;
+                                    println!("Formatted [File]: {} ({} fix(es))", file_path.to_string_lossy(), file_fixes);
+                                    files_formatted += 1;
+                                    total_fixes += file_fixes;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            println!("\nFormatting complete: fixed {} preset reference(s) across {} file(s).", total_fixes, files_formatted);
+        }
+        Commands::Preview { markup } => {
+            let result = validate_structural(Some(&conn), &markup);
+            
+            let first_block = result.parsed_blocks.iter().find(|b| b.block_name.is_some());
+            let mut status = "invalid".to_string();
+            
+            if result.valid {
+                status = "structural_only".to_string();
+                if let Some(block) = first_block {
+                    if let Some(ref name) = block.block_name {
+                        if let Ok(Some(db_block)) = db::get_block_by_name(&conn, name) {
+                            if db_block.block_type == "dynamic" {
+                                status = "attributes_only".to_string();
+                            }
+                        }
+                    }
+                }
+            }
+
+            let summary = if result.valid {
+                format!(
+                    "VALID — Passed structural validation{}",
+                    if !result.warnings.is_empty() { format!(" with {} warning(s)", result.warnings.len()) } else { "".to_string() }
+                )
+            } else {
+                format!("INVALID — {} structural error(s)", result.errors.len())
+            };
+
+            wp_block_mcp::utils::preview_server::start_preview_server(
+                markup,
+                summary,
+                status,
+                result.warnings,
+                result.errors,
+            );
+        }
     }
 
     Ok(())
+}
+
+fn get_block_lines(content: &str, blocks: &[ParsedBlock]) -> Vec<(Option<String>, usize)> {
+    let mut result = Vec::new();
+    let mut curr_idx = 0;
+    
+    fn recurse(
+        content: &str,
+        blocks: &[ParsedBlock],
+        curr_idx: &mut usize,
+        result: &mut Vec<(Option<String>, usize)>,
+    ) {
+        for block in blocks {
+            if let Some(ref name) = block.block_name {
+                let pattern = format!("wp:{}", name.replace("core/", ""));
+                let pattern_full = format!("wp:{}", name);
+                
+                let found_idx = content[*curr_idx..].find(&pattern)
+                    .or_else(|| content[*curr_idx..].find(&pattern_full));
+                
+                if let Some(idx) = found_idx {
+                    let abs_idx = *curr_idx + idx;
+                    let line = content[..abs_idx].chars().filter(|&c| c == '\n').count() + 1;
+                    result.push((Some(name.clone()), line));
+                    *curr_idx = abs_idx + pattern.len();
+                } else {
+                    result.push((Some(name.clone()), 1));
+                }
+            } else {
+                result.push((None, 1));
+            }
+            recurse(content, &block.inner_blocks, curr_idx, result);
+        }
+    }
+    
+    recurse(content, blocks, &mut curr_idx, &mut result);
+    result
 }
 
 fn print_index_stats(stats: &IndexStats) {

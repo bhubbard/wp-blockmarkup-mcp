@@ -9,6 +9,7 @@ pub fn fetch_source(source: &Source) -> Result<PathBuf, String> {
         "github-public" => fetch_github_public(source),
         "github-private" => fetch_github_private(source),
         "local-folder" => fetch_local_folder(source),
+        "wordpress-org" => fetch_wordpress_org(source),
         other => Err(format!("Unknown source type: {}", other)),
     }
 }
@@ -170,5 +171,85 @@ fn clean_repo_name(url: &str) -> String {
         parts[1..].join("--")
     } else {
         cleaned.replace('/', "--")
+    }
+}
+
+fn fetch_wordpress_org(source: &Source) -> Result<PathBuf, String> {
+    let slug = source.repo_url.as_ref()
+        .or(source.local_path.as_ref())
+        .ok_or_else(|| "wordpress-org type requires slug (stored in repo_url or local_path)".to_string())?;
+    
+    // Clean slug in case a full URL was provided
+    let cleaned_slug = slug
+        .trim_end_matches('/')
+        .split('/')
+        .last()
+        .ok_or_else(|| "Invalid slug format".to_string())?;
+
+    let dest_dir = cache_dir().join(format!("wp-org--{}", cleaned_slug));
+    fs::create_dir_all(cache_dir()).map_err(|e| e.to_string())?;
+
+    println!("Querying WordPress.org API for plugin '{}'...", cleaned_slug);
+    let api_url = format!(
+        "https://api.wordpress.org/plugins/info/1.2/?action=plugin_information&request[slug]={}",
+        cleaned_slug
+    );
+
+    let output = Command::new("curl")
+        .args(&["-sL", &api_url])
+        .output()
+        .map_err(|e| format!("Failed to execute curl: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("WordPress API query failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let api_res: serde_json::Value = serde_json::from_str(&json_str)
+        .map_err(|e| format!("Failed to parse WordPress API JSON: {}. Response: {}", e, json_str))?;
+
+    let download_link = api_res["download_link"]
+        .as_str()
+        .ok_or_else(|| format!("Plugin '{}' not found or download_link is missing in API response.", cleaned_slug))?;
+
+    let temp_zip = cache_dir().join(format!("{}.zip", cleaned_slug));
+    println!("Downloading plugin from {}...", download_link);
+
+    let download_status = Command::new("curl")
+        .args(&["-sL", "-o", temp_zip.to_str().unwrap(), download_link])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !download_status.success() {
+        return Err(format!("Failed to download plugin zip from {}", download_link));
+    }
+
+    println!("Extracting plugin to cache...");
+    let unzip_status = Command::new("unzip")
+        .args(&["-q", "-o", temp_zip.to_str().unwrap(), "-d", cache_dir().to_str().unwrap()])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    let _ = fs::remove_file(temp_zip);
+
+    if !unzip_status.success() {
+        return Err(format!("Failed to unzip plugin {}", cleaned_slug));
+    }
+
+    let extracted_dir = cache_dir().join(cleaned_slug);
+    if extracted_dir.exists() {
+        if dest_dir.exists() {
+            let _ = fs::remove_dir_all(&dest_dir);
+        }
+        fs::rename(&extracted_dir, &dest_dir)
+            .map_err(|e| format!("Failed to rename extracted directory: {}", e))?;
+    } else {
+        return Err(format!("Extracted directory {:?} not found", extracted_dir));
+    }
+
+    if let Some(ref subfolder) = source.subfolder {
+        Ok(dest_dir.join(subfolder))
+    } else {
+        Ok(dest_dir)
     }
 }

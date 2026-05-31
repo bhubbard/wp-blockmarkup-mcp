@@ -6,6 +6,7 @@ use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
+use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClassPattern {
@@ -70,6 +71,9 @@ pub fn parse_save_file(block_path: &Path) -> SaveData {
     if !save_path.exists() {
         result.returns_null = true;
         result.block_type = if has_render_php { "dynamic".to_string() } else { "unknown".to_string() };
+        if has_render_php {
+            parse_render_php(block_path, &mut result);
+        }
         return result;
     }
 
@@ -433,6 +437,35 @@ fn extract_class_patterns(call: &CallExpression, result: &mut SaveData) {
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+fn parse_render_php(block_path: &Path, result: &mut SaveData) {
+    let render_path = block_path.join("render.php");
+    if let Ok(content) = fs::read_to_string(&render_path) {
+        // Remove PHP blocks to simplify scanning for the first HTML tag
+        let re_php = Regex::new(r"(?s)<\?php.*?\?>").unwrap();
+        let html_only = re_php.replace_all(&content, "");
+
+        // Find first HTML tag
+        let re_tag = Regex::new(r"<([a-zA-Z0-9]+)").unwrap();
+        if let Some(caps) = re_tag.captures(&html_only) {
+            result.wrapper_element = Some(caps[1].to_string());
+        }
+
+        // Check if get_block_wrapper_attributes is used
+        if content.contains("get_block_wrapper_attributes") {
+            result.class_patterns.push(ClassPattern {
+                class_name: None,
+                conditional: None,
+                condition: None,
+                r#static: None,
+                source: Some("get_block_wrapper_attributes()".to_string()),
+                expression: None,
+                description: Some("Uses WordPress dynamic block wrapper attributes".to_string()),
+                dynamic: Some(true),
+            });
         }
     }
 }
