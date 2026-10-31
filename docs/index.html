@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WP-BlockMarkup-MCP — Rust Gutenberg Block Grammar Validator, OXC AST Indexer & MCP Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root, [data-theme="dark"] {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface-alt: #161616;
+      --fg: #f4f4f6;
+      --muted: #8e8e98;
+      --border: #242429;
+      --accent: #3b82f6;
+      --accent-alt: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+    }
+    [data-theme="light"] {
+      --bg: #f8f8fa;
+      --surface: #ffffff;
+      --surface-alt: #f1f1f5;
+      --fg: #0b0b0e;
+      --muted: #52525b;
+      --border: #d4d4d8;
+      --accent: #2563eb;
+      --accent-alt: #059669;
+      --warn: #d97706;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0 !important; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+    a { color: inherit; text-decoration: none; }
+
+    .bh-header {
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .bh-brand { font-weight: 800; display: flex; align-items: center; gap: 0.75rem; }
+    .bh-brand span.tag {
+      background: var(--accent);
+      color: #fff;
+      padding: 0.1rem 0.45rem;
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .bh-nav { display: flex; align-items: center; gap: 1.25rem; }
+    .bh-nav a:hover { color: var(--accent); }
+    .theme-btn {
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+    }
+    .theme-btn:hover { border-color: var(--accent); }
+
+    .subnav {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 1.5rem;
+      padding: 0.6rem 1.5rem;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+    }
+    .subnav a { color: var(--muted); }
+    .subnav a:hover { color: var(--fg); }
+
+    .container { max-width: 1400px; margin: 0 auto; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 960px) { .hero { grid-template-columns: 1fr; } }
+    .hero-left { padding: 3rem 2.25rem; border-right: 1px solid var(--border); }
+    .eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.9rem;
+    }
+    h1 {
+      font-size: clamp(2rem, 3.6vw, 3.1rem);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.15rem;
+    }
+    .hero-desc {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 62ch;
+      margin-bottom: 1.75rem;
+    }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+    .btn {
+      padding: 0.7rem 1.25rem;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      font-weight: 700;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-secondary { background: var(--surface); color: var(--fg); }
+    .btn:hover { opacity: 0.92; }
+
+    .hero-right {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+    }
+    .metric-cell {
+      padding: 1.75rem;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .metric-cell:nth-child(2n) { border-right: none; }
+    .metric-cell:nth-child(n+3) { border-bottom: none; }
+    .metric-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+    .metric-val { font-size: 2.3rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--fg); margin: 0.4rem 0; }
+    .metric-sub { font-size: 0.75rem; color: var(--accent-alt); font-family: 'JetBrains Mono', monospace; }
+
+    .section-header {
+      padding: 1.25rem 2.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .section-tag { font-size: 0.75rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 960px) { .studio-grid { grid-template-columns: 1fr; } }
+    .studio-pane { padding: 1.75rem 2.25rem; border-right: 1px solid var(--border); }
+    .studio-pane:last-child { border-right: none; }
+
+    .preset-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .preset-btn {
+      background: var(--surface-alt);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.75rem;
+      font-size: 0.72rem;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+    }
+    .preset-btn.active, .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    textarea.code-input {
+      width: 100%;
+      min-height: 220px;
+      background: var(--surface-alt);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.85rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.45;
+      resize: vertical;
+    }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+      background: var(--surface);
+    }
+    .stat-item { padding: 0.75rem; border-right: 1px solid var(--border); }
+    .stat-item:last-child { border-right: none; }
+    .stat-item .k { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+    .stat-item .v { font-size: 1.05rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; margin-top: 0.2rem; }
+
+    .diag-list { border: 1px solid var(--border); background: var(--surface); margin-bottom: 1rem; }
+    .diag-row {
+      padding: 0.6rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.73rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .diag-row:last-child { border-bottom: none; }
+
+    .ast-box {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      padding: 0.85rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      max-height: 210px;
+      overflow-y: auto;
+      white-space: pre;
+    }
+
+    table.bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+    table.bench-table th, table.bench-table td {
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      text-align: left;
+    }
+    table.bench-table th { background: var(--surface-alt); color: var(--muted); text-transform: uppercase; font-size: 0.72rem; }
+    .badge-speed { background: rgba(16, 185, 129, 0.15); color: var(--accent-alt); padding: 0.15rem 0.45rem; font-weight: 700; }
+
+    footer {
+      padding: 2rem 2.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <header class="bh-header">
+    <div class="bh-brand">
+      <a href="https://code.brandonhubbard.com/">BRANDON HUBBARD // ENGINEERING PORTAL</a>
+      <span class="tag">RUST + OXC_PARSER + MCP</span>
+    </div>
+    <nav class="bh-nav">
+      <a href="https://github.com/bhubbard/wp-blockmarkup-mcp">GitHub Repo</a>
+      <a href="benchmarks.md">Benchmarks</a>
+      <button class="theme-btn" id="themeToggle" type="button">LIGHT / DARK</button>
+    </nav>
+  </header>
+
+  <nav class="subnav">
+    <a href="#studio">01 // Block Grammar & Tier-2 Save Validator</a>
+    <a href="#generator">02 // Canonical Block Markup Generator</a>
+    <a href="#benchmarks">03 // Empirical Benchmarks (70.8x)</a>
+  </nav>
+
+  <main class="container">
+    <section class="hero">
+      <div class="hero-left">
+        <div class="eyebrow">WORDPRESS GUTENBERG BLOCK SERIALIZATION & OXC SAVE AST MCP SERVER</div>
+        <h1>WP-BLOCKMARKUP-MCP</h1>
+        <p class="hero-desc">
+          Zero-copy Rust Gutenberg comment delimiter parser (<code>BlockParser</code>), <code>oxc_parser</code> JSX/TSX <code>save.js</code> AST extractor, Tier-1/Tier-2 HTML wrapper & CSS preset validator (<code>validate_save_output</code>), and SQLite-backed Model Context Protocol (MCP) server.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#studio">Launch Block Validator Studio</a>
+          <a class="btn btn-secondary" href="https://github.com/bhubbard/wp-blockmarkup-mcp">View Source on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="metric-cell">
+          <span class="metric-label">End-to-End Indexing Speedup</span>
+          <span class="metric-val">70.8x</span>
+          <span class="metric-sub">88.1 ms vs 6,240.0 ms (Node + Babel)</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label">JSX save.js AST Extraction</span>
+          <span class="metric-val">79.2x</span>
+          <span class="metric-sub">oxc_parser Arena vs @babel/parser</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label">10k Block Trees Parse</span>
+          <span class="metric-val">21.4ms</span>
+          <span class="metric-sub">66.4x vs default-parser</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label">Peak RSS Footprint</span>
+          <span class="metric-val">16.4MB</span>
+          <span class="metric-sub">28.5x lower than Node.js</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="studio">
+      <div class="section-header">
+        <span class="section-title">01 // Interactive Gutenberg Block Grammar & Tier-2 Save Validator</span>
+        <span class="section-tag">src/validation/{block_parser,save_validator,preset}.rs</span>
+      </div>
+      <div class="studio-grid">
+        <div class="studio-pane">
+          <div class="preset-bar">
+            <button class="preset-btn active" data-preset="verified">Preset: Verified Nested Group + Heading</button>
+            <button class="preset-btn" data-preset="bad-preset">Preset: Un-kebab-cased Preset Bug</button>
+            <button class="preset-btn" data-preset="bad-save">Preset: Tier-2 Wrapper & Class Mismatch</button>
+            <button class="preset-btn" data-preset="full-featured">Preset: Full-Featured Typography & Spacing</button>
+          </div>
+          <textarea id="markupInput" class="code-input" spellcheck="false"></textarea>
+        </div>
+
+        <div class="studio-pane">
+          <div class="stat-strip">
+            <div class="stat-item">
+              <div class="k">Validation Status</div>
+              <div class="v" id="stStatus">VERIFIED</div>
+            </div>
+            <div class="stat-item">
+              <div class="k">Total Blocks</div>
+              <div class="v" id="stTotalBlocks">3</div>
+            </div>
+            <div class="stat-item">
+              <div class="k">Max Nesting Depth</div>
+              <div class="v" id="stDepth">2</div>
+            </div>
+            <div class="stat-item">
+              <div class="k">Issues / Warnings</div>
+              <div class="v" id="stIssues">0</div>
+            </div>
+          </div>
+
+          <div class="diag-list" id="diagList"></div>
+          <div class="ast-box" id="astOutput"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="generator">
+      <div class="section-header">
+        <span class="section-title">02 // Canonical Block Markup Generator (src/utils/markup_generator.rs)</span>
+        <span class="section-tag">generate_markup_examples(&BlockData)</span>
+      </div>
+      <div style="padding:1.5rem 2.25rem; border-bottom:1px solid var(--border); display:grid; grid-template-columns:repeat(3,1fr); gap:1rem;">
+        <div style="border:1px solid var(--border); padding:1rem; background:var(--surface);">
+          <div class="mono" style="font-size:0.72rem; color:var(--accent); font-weight:700;">TIER 1 // BLOCK GRAMMAR + PRESET LINTER</div>
+          <p style="font-size:0.8rem; color:var(--muted); margin-top:0.35rem;">Parses <code>&lt;!-- wp:namespace/name {...} --&gt;</code> delimiters, detects stray freeform HTML outside blocks, and verifies <code>var:preset|group|camelSlug</code> converts to <code>--wp--preset--group--camel-slug</code>.</p>
+        </div>
+        <div style="border:1px solid var(--border); padding:1rem; background:var(--surface);">
+          <div class="mono" style="font-size:0.72rem; color:var(--accent-alt); font-weight:700;">TIER 2 // OXC_PARSER SAVE.JS VERIFIER</div>
+          <p style="font-size:0.8rem; color:var(--muted); margin-top:0.35rem;">Extracts wrapper tag, <code>useBlockProps.save()</code> classes, <code>has-{color}-background-color</code>, and inline spacing/typography styles directly from block source ASTs.</p>
+        </div>
+        <div style="border:1px solid var(--border); padding:1rem; background:var(--surface);">
+          <div class="mono" style="font-size:0.72rem; color:var(--warn); font-weight:700;">TIER 3 // RMCP STDIO SERVER + SQLITE INDEX</div>
+          <p style="font-size:0.8rem; color:var(--muted); margin-top:0.35rem;">Exposes <code>validate_block_markup</code>, <code>get_block_schema</code>, and <code>generate_block_example</code> tools to AI coding agents with sub-millisecond SQLite lookups.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="benchmarks">
+      <div class="section-header">
+        <span class="section-title">03 // Empirical Performance Benchmarks (WP-BlockMarkup-MCP vs Node.js + Babel)</span>
+        <span class="section-tag">8-Core x86_64 Linux</span>
+      </div>
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th>Pipeline Stage</th>
+            <th>Node.js (@wordpress/default-parser + Babel)</th>
+            <th>wp-blockmarkup-mcp (Rust + oxc_parser)</th>
+            <th>Speedup</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>10,000 Nested Gutenberg Block Trees Parse (<code>BlockParser</code>)</td>
+            <td>1,420.0 ms</td>
+            <td><strong>21.4 ms</strong></td>
+            <td><span class="badge-speed">66.4x</span></td>
+          </tr>
+          <tr>
+            <td>500 <code>save.js</code> / <code>edit.js</code> JSX AST Extraction (<code>oxc_parser</code>)</td>
+            <td>3,840.0 ms</td>
+            <td><strong>48.5 ms</strong></td>
+            <td><span class="badge-speed">79.2x</span></td>
+          </tr>
+          <tr>
+            <td>Tier-1 + Tier-2 Schema & Preset Validation (<code>jsonschema</code> + <code>preset.rs</code>)</td>
+            <td>980.0 ms</td>
+            <td><strong>18.2 ms</strong></td>
+            <td><span class="badge-speed">53.8x</span></td>
+          </tr>
+          <tr>
+            <td><strong>Total End-to-End Block Indexing & Validation</strong></td>
+            <td><strong>6,240.0 ms</strong></td>
+            <td><strong>88.1 ms</strong></td>
+            <td><span class="badge-speed">70.8x</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <span>WP-BLOCKMARKUP-MCP // SWISS MODERNIST ENGINEERING STUDIO</span>
+      <span>BUILT BY BRANDON HUBBARD — RUST 2024 EDITION</span>
+    </footer>
+  </main>
+
+  <script>
+    const themeToggle = document.getElementById('themeToggle');
+    themeToggle.addEventListener('click', () => {
+      const root = document.documentElement;
+      root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    const PRESETS = {
+      'verified': `<!-- wp:group {"layout":{"type":"constrained"},"backgroundColor":"pale-cyan-blue"} -->
+<div class="wp-block-group has-pale-cyan-blue-background-color has-background"><!-- wp:heading {"textAlign":"center"} -->
+<h2 class="wp-block-heading has-text-align-center">Gutenberg Block AST Verified</h2>
+<!-- /wp:heading --><!-- wp:paragraph {"fontSize":"large"} -->
+<p class="wp-block-paragraph has-large-font-size">Zero-copy Rust comment delimiter parsing with Tier-2 save() validation.</p>
+<!-- /wp:paragraph --></div>
+<!-- /wp:group -->`,
+      'bad-preset': `<!-- wp:paragraph {"style":{"color":{"background":"var:preset|color|vividCyanBlue"}}} -->
+<p class="wp-block-paragraph has-background" style="background-color:var(--wp--preset--color--vividCyanBlue)">Invalid camelCase CSS custom property in inline style.</p>
+<!-- /wp:paragraph -->`,
+      'bad-save': `<!-- wp:paragraph {"backgroundColor":"pale-cyan-blue","textColor":"vivid-purple","style":{"spacing":{"padding":{"top":"2rem"}}}} -->
+<div class="wp-block-paragraph">Mismatched wrapper div instead of p, missing color classes & missing inline padding style.</div>
+<!-- /wp:paragraph -->`,
+      'full-featured': `<!-- wp:paragraph {"align":"center","backgroundColor":"pale-cyan-blue","textColor":"vivid-purple","fontSize":"large","style":{"typography":{"lineHeight":"1.6"},"spacing":{"padding":{"top":"1.5rem","right":"1.5rem","bottom":"1.5rem","left":"1.5rem"}}}} -->
+<p class="wp-block-paragraph has-text-align-center has-pale-cyan-blue-background-color has-vivid-purple-color has-text-color has-background has-large-font-size" style="line-height:1.6;padding-top:1.5rem;padding-right:1.5rem;padding-bottom:1.5rem;padding-left:1.5rem">This is a paragraph block with example content.</p>
+<!-- /wp:paragraph -->`
+    };
+
+    function wpToKebabCase(str) {
+      return str.replace(/([a-z0-9])([A-Z])|([0-9])([a-zA-Z])|([a-zA-Z])([0-9])/g, '$1$3$5-$2$4$6').toLowerCase();
+    }
+
+    function parseBlocks(doc) {
+      const tokenRe = /<!--\s*(\/)?wp:([a-z0-9_-]+(?:\/[a-z0-9_-]+)?)\s*(\{[\s\S]*?\})?\s*(\/)?-->/g;
+      const stack = [];
+      const output = [];
+      let lastIndex = 0;
+      let match;
+
+      while ((match = tokenRe.exec(doc)) !== null) {
+        const [full, isCloser, rawName, attrsRaw, isVoid] = match;
+        const blockName = rawName.includes('/') ? rawName : `core/${rawName}`;
+        let attrs = {};
+        if (attrsRaw) {
+          try { attrs = JSON.parse(attrsRaw); } catch (e) { attrs = null; }
+        }
+        if (isVoid) {
+          const node = { blockName, attrs, innerBlocks: [], innerHTML: '' };
+          if (stack.length > 0) stack[stack.length - 1].block.innerBlocks.push(node);
+          else output.push(node);
+        } else if (!isCloser) {
+          stack.push({ block: { blockName, attrs, innerBlocks: [], innerHTML: '' }, contentStart: tokenRe.lastIndex });
+        } else if (stack.length > 0) {
+          const frame = stack.pop();
+          frame.block.innerHTML = doc.slice(frame.contentStart, match.index).trim();
+          if (stack.length > 0) stack[stack.length - 1].block.innerBlocks.push(frame.block);
+          else output.push(frame.block);
+        }
+        lastIndex = tokenRe.lastIndex;
+      }
+      return output;
+    }
+
+    function totalBlockCount(block) {
+      return 1 + block.innerBlocks.reduce((acc, b) => acc + totalBlockCount(b), 0);
+    }
+    function maxNestingDepth(block) {
+      return 1 + (block.innerBlocks.length ? Math.max(...block.innerBlocks.map(maxNestingDepth)) : 0);
+    }
+
+    function validateBlockTree(blocks) {
+      const diagnostics = [];
+      function visit(block) {
+        const html = block.innerHTML || '';
+        const attrs = block.attrs || {};
+        if (block.blockName === 'core/paragraph' && html && !/^<p[\s>]/.test(html)) {
+          diagnostics.push({ level: 'ERROR (Tier-2)', msg: `Expected wrapper <p> on core/paragraph, found incompatible tag` });
+        }
+        if (attrs.backgroundColor) {
+          const cls = `has-${attrs.backgroundColor}-background-color`;
+          if (!html.includes(cls)) diagnostics.push({ level: 'ERROR (Tier-2)', msg: `Missing background class "${cls}"` });
+          if (!html.includes('has-background')) diagnostics.push({ level: 'ERROR (Tier-2)', msg: `Missing "has-background" class` });
+        }
+        if (attrs.textColor) {
+          const cls = `has-${attrs.textColor}-color`;
+          if (!html.includes(cls)) diagnostics.push({ level: 'ERROR (Tier-2)', msg: `Missing text color class "${cls}"` });
+        }
+        if (attrs.style && attrs.style.spacing && attrs.style.spacing.padding && !html.includes('padding')) {
+          diagnostics.push({ level: 'ERROR (Tier-2)', msg: `Spacing padding set in attrs but missing in inline style attribute` });
+        }
+        const jsonStr = JSON.stringify(attrs);
+        const presetMatch = jsonStr.match(/var:preset\|([a-z0-9-]+)\|([a-zA-Z0-9-]+)/);
+        if (presetMatch) {
+          const group = presetMatch[1];
+          const slug = presetMatch[2];
+          const kebab = wpToKebabCase(slug);
+          if (kebab !== slug && html.includes(`--wp--preset--${group}--${slug}`)) {
+            diagnostics.push({
+              level: 'WARN (Preset)',
+              msg: `Inline style uses "--wp--preset--${group}--${slug}" instead of canonical "--wp--preset--${group}--${kebab}"`
+            });
+          }
+        }
+        block.innerBlocks.forEach(visit);
+      }
+      blocks.forEach(visit);
+      return diagnostics;
+    }
+
+    const markupInput = document.getElementById('markupInput');
+    function updateStudio() {
+      const doc = markupInput.value;
+      const blocks = parseBlocks(doc);
+      const count = blocks.reduce((s, b) => s + totalBlockCount(b), 0);
+      const depth = blocks.length ? Math.max(...blocks.map(maxNestingDepth)) : 0;
+      const diags = validateBlockTree(blocks);
+
+      const stStatus = document.getElementById('stStatus');
+      if (blocks.length === 0) {
+        stStatus.textContent = 'INVALID';
+        stStatus.style.color = 'var(--danger)';
+      } else if (diags.some(d => d.level.startsWith('ERROR'))) {
+        stStatus.textContent = 'STRUCTURAL_ONLY';
+        stStatus.style.color = 'var(--danger)';
+      } else if (diags.length > 0) {
+        stStatus.textContent = 'WARN_PRESET';
+        stStatus.style.color = 'var(--warn)';
+      } else {
+        stStatus.textContent = 'VERIFIED';
+        stStatus.style.color = 'var(--accent-alt)';
+      }
+
+      document.getElementById('stTotalBlocks').textContent = count;
+      document.getElementById('stDepth').textContent = depth;
+      document.getElementById('stIssues').textContent = diags.length;
+
+      const diagList = document.getElementById('diagList');
+      if (diags.length === 0) {
+        diagList.innerHTML = `<div class="diag-row"><span style="color:var(--accent-alt);">[TIER-1 & TIER-2 PASS]</span><span>All block delimiters, wrapper tags, preset variables, and classes verified.</span></div>`;
+      } else {
+        diagList.innerHTML = diags.map(d => `<div class="diag-row"><span style="color:${d.level.startsWith('ERROR') ? 'var(--danger)' : 'var(--warn)'};">[${d.level}]</span><span>${d.msg}</span></div>`).join('');
+      }
+
+      document.getElementById('astOutput').textContent = JSON.stringify(blocks, null, 2);
+    }
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        markupInput.value = PRESETS[btn.dataset.preset];
+        updateStudio();
+      });
+    });
+
+    markupInput.addEventListener('input', updateStudio);
+    markupInput.value = PRESETS['verified'];
+    updateStudio();
+  </script>
+</body>
+</html>

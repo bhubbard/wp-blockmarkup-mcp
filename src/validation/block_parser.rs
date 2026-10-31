@@ -31,7 +31,7 @@ impl ParsedBlock {
     }
 
     pub fn freeform(inner_html: String) -> Self {
-        let mut map = serde_json::Map::new();
+        let map = serde_json::Map::new();
         ParsedBlock::new(
             None,
             Some(serde_json::Value::Object(map)),
@@ -39,6 +39,16 @@ impl ParsedBlock {
             inner_html.clone(),
             vec![Some(inner_html)],
         )
+    }
+
+    /// Recursively counts the total number of blocks (including this block and all nested `inner_blocks`).
+    pub fn total_block_count(&self) -> usize {
+        1 + self.inner_blocks.iter().map(Self::total_block_count).sum::<usize>()
+    }
+
+    /// Computes the maximum nesting depth of this block subtree (1 for a leaf block).
+    pub fn max_nesting_depth(&self) -> usize {
+        1 + self.inner_blocks.iter().map(Self::max_nesting_depth).max().unwrap_or(0)
     }
 }
 
@@ -192,7 +202,7 @@ impl<'a> BlockParser<'a> {
                 block.inner_html.push_str(html);
                 block.inner_content.push(Some(html.to_string()));
 
-                let mut frame_to_add = ParsedFrame {
+                let frame_to_add = ParsedFrame {
                     block,
                     token_start: stack_top.token_start,
                     token_length: stack_top.token_length,
@@ -456,4 +466,20 @@ impl<'a> BlockParser<'a> {
 pub fn parse(doc: &str) -> Vec<ParsedBlock> {
     let mut parser = BlockParser::new(doc);
     parser.parse()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_nested_blocks_and_metrics() {
+        let doc = "<!-- wp:group {\"layout\":{\"type\":\"constrained\"}} -->\n<div class=\"wp-block-group\"><!-- wp:paragraph {\"align\":\"center\"} -->\n<p class=\"has-text-align-center\">Hello Gutenberg</p>\n<!-- /wp:paragraph --></div>\n<!-- /wp:group -->";
+        let blocks = parse(doc);
+        assert_eq!(blocks.len(), 1);
+        let root = &blocks[0];
+        assert_eq!(root.block_name.as_deref(), Some("core/group"));
+        assert_eq!(root.total_block_count(), 2);
+        assert_eq!(root.max_nesting_depth(), 2);
+    }
 }

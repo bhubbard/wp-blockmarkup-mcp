@@ -132,7 +132,7 @@ fn validate_block(conn: Option<&Connection>, block: &ParsedBlock, errors: &mut V
             });
 
         if let Some(s) = schema {
-            let mut val_schema = ValidationSchema {
+            let val_schema = ValidationSchema {
                 block_name: s.block.block_name,
                 block_type: s.block.block_type,
                 attributes: s.attributes.iter().map(|a| ValidationSchemaAttribute {
